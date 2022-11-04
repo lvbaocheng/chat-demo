@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 type Server struct {
@@ -53,8 +54,10 @@ func (this *Server) Handler(conn net.Conn) {
 	fmt.Println("链接建立成功...")
 
 	user := NewUser(conn, this)
-
 	user.Online()
+
+	//监听用户是否活跃的channel
+	isLive := make(chan bool)
 
 	//接受客户端发送的消息
 	go func() {
@@ -74,11 +77,28 @@ func (this *Server) Handler(conn net.Conn) {
 			msg := string(buf[:n-1])
 			//对msg进行发送处理
 			user.DoMessage(msg)
+			//用户发送消息则表示用户活跃
+			isLive <- true
 		}
 	}()
 
 	//当前handler阻塞
-	select {}
+	for {
+		select {
+		case <-isLive:
+			//当前用户是活跃的，则重置定时器
+		case <-time.After(time.Second * 10):
+			//超时，将当前用户从OnlineMap剔除
+			user.sendMsg("你超时被踢了")
+
+			//销毁资源
+			close(user.C)
+			conn.Close() //关闭链接
+			//退出当前Handler
+			return //runtime.Goexit()
+		}
+	}
+
 }
 
 // 启动服务器的接口
